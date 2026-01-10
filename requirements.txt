@@ -1,0 +1,10 @@
+gymnasium
+stable-baselines3
+opencv-python
+numpy
+shimmy
+pyautogui
+mss
+python-xlib
+pytesseract
+tensorboard
