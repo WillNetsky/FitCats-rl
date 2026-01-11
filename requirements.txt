@@ -8,3 +8,4 @@ mss
 python-xlib
 pytesseract
 tensorboard
+keyboard

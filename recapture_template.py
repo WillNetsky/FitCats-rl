@@ -2,97 +2,106 @@ import pyautogui
 import mss
 import numpy as np
 import cv2
+import os
+import time
 
 def select_roi(img, window_name="Select ROI"):
-    """Lets the user select a Region of Interest in an image."""
     print(f"\nIn the '{window_name}' window, drag a box around the target area.")
-    print("Press ENTER to confirm your selection.")
+    print("Press ENTER to confirm your selection, or 'c' to cancel.")
     roi = cv2.selectROI(window_name, img, showCrosshair=True, fromCenter=False)
     cv2.destroyAllWindows()
     if roi[2] == 0 or roi[3] == 0:
         return None
     return roi
 
-def main():
-    print("=== Comprehensive Template Recapture Tool ===")
-    print("This will capture all necessary templates in one go.")
-
-    # --- 1. Capture Game Title / Main Window ---
-    print("\nStep 1: Capture the entire game window.")
-    print("Make sure the game's TITLE SCREEN is clearly visible on your primary monitor.")
-    input("Press Enter to take a screenshot of your primary monitor...")
+def capture_template(prompt, output_filename, window_title):
+    print(f"\n--- {window_title} ---")
+    print(prompt)
+    choice = input(f"Press ENTER to capture, or 'n' to skip if you have a good '{output_filename}': ").lower()
+    
+    if choice == 'n':
+        print(f"Skipping '{output_filename}'.")
+        return None
 
     with mss.mss() as sct:
-        primary_monitor = sct.monitors[1]
-        screenshot = np.array(sct.grab(primary_monitor))
+        # In the sandbox, monitor[1] is the virtual screen
+        monitor = sct.monitors[1]
+        screenshot = np.array(sct.grab(monitor))
         screenshot_bgr = cv2.cvtColor(screenshot, cv2.COLOR_BGRA2BGR)
 
-    game_roi = select_roi(screenshot_bgr, "Select the ENTIRE GAME WINDOW")
-    if not game_roi:
-        print("No game window selected. Aborting.")
-        return
+    roi = select_roi(screenshot_bgr, window_title)
+    if not roi:
+        print("Selection cancelled.")
+        return "abort"
+        
+    x, y, w, h = roi
+    template_img = screenshot_bgr[y:y+h, x:x+w]
+    cv2.imwrite(output_filename, template_img)
+    print(f"Saved '{output_filename}'.")
+    return template_img
+
+def main():
+    print("=== Comprehensive Template Recapture Tool ===")
     
-    x_game, y_game, w_game, h_game = game_roi
-    game_title_img = screenshot_bgr[y_game:y_game+h_game, x_game:x_game+w_game]
-    cv2.imwrite("game_title.png", game_title_img)
-    print("Saved 'game_title.png'.")
+    # --- 0. Newgrounds Start Button ---
+    result = capture_template(
+        "If you see a 'Click to Play' or 'Launch Game' button overlay, capture it now.",
+        "template_newgrounds_play.png",
+        "Step 0: Select the NEWGROUNDS PLAY BUTTON"
+    )
+    if isinstance(result, str) and result == "abort": return
 
-    # --- 2. Capture Play Button from the Title Image ---
-    print("\nStep 2: Capture the PLAY button from the image you just selected.")
-    play_roi = select_roi(game_title_img.copy(), "Select the PLAY button")
-    if not play_roi:
-        print("No play button selected. Aborting.")
-        return
-        
-    x, y, w, h = play_roi
-    template_play_img = game_title_img[y:y+h, x:x+w]
-    cv2.imwrite("template_play.png", template_play_img)
-    print("Saved 'template_play.png'.")
+    if result is not None:
+        print("Clicking the button to proceed...")
+        # We can't easily click here without coordinates, so we ask the user
+        input("Please manually click the button in the browser to load the game, then press Enter...")
+        time.sleep(5) # Wait for load
 
-    # --- 3. Capture Empty Board ---
-    print("\nStep 3: Capture the EMPTY PLAYING FIELD.")
-    print("Manually click the 'Play' button in the game window now.")
-    input("Once the game has started with an empty board, press Enter...")
+    # --- 1. Title Screen ---
+    title_img_result = capture_template(
+        "Make sure the game's TITLE SCREEN is clearly visible.",
+        "game_title.png",
+        "Step 1: Select the ENTIRE GAME WINDOW"
+    )
+    
+    if isinstance(title_img_result, str) and title_img_result == "abort": return
+    elif title_img_result is None:
+        if not os.path.exists("game_title.png"):
+            print("Skipped, but 'game_title.png' does not exist. Aborting.")
+            return
+        title_img = cv2.imread("game_title.png")
+    else:
+        title_img = title_img_result
 
-    with mss.mss() as sct:
-        # Re-grab the whole monitor to ensure we see the updated game state
-        primary_monitor = sct.monitors[1]
-        screenshot = np.array(sct.grab(primary_monitor))
-        empty_board_bgr = cv2.cvtColor(screenshot, cv2.COLOR_BGRA2BGR)
+    # --- 2. Play Button ---
+    print("\n--- Step 1b: Select Play Button ---")
+    print("Now, select the PLAY button from within the title screen image.")
+    play_roi = select_roi(title_img.copy(), "Select the PLAY button")
+    if play_roi:
+        x, y, w, h = play_roi
+        template_play_img = title_img[y:y+h, x:x+w]
+        cv2.imwrite("template_play.png", template_play_img)
+        print("Saved 'template_play.png'.")
+    else:
+        print("Skipping Play button.")
 
-    empty_board_roi = select_roi(empty_board_bgr.copy(), "Select the EMPTY PLAYING FIELD")
-    if not empty_board_roi:
-        print("No empty board selected. Aborting.")
-        return
-        
-    x, y, w, h = empty_board_roi
-    template_empty_board_img = empty_board_bgr[y:y+h, x:x+w]
-    cv2.imwrite("template_empty_board.png", template_empty_board_img)
-    print("Saved 'template_empty_board.png'.")
+    # --- 3. Empty Board ---
+    result = capture_template(
+        "Manually start a game so the board is empty.",
+        "template_empty_board.png",
+        "Step 2: Select a STATIC portion of the ACTIVE game (e.g., the empty board)"
+    )
+    if isinstance(result, str) and result == "abort": return
 
-    # --- 4. Capture Restart Button ---
-    print("\nStep 4: Capture the RESTART button.")
-    print("Play the game manually until you reach the GAME OVER screen.")
-    input("Press Enter when the GAME OVER screen is visible...")
+    # --- 4. Restart Button ---
+    result = capture_template(
+        "Play the game until you get a GAME OVER screen.",
+        "template_restart.png",
+        "Step 3: Select the RESTART button"
+    )
+    if isinstance(result, str) and result == "abort": return
 
-    with mss.mss() as sct:
-        # Re-grab the whole monitor again
-        primary_monitor = sct.monitors[1]
-        screenshot = np.array(sct.grab(primary_monitor))
-        game_over_bgr = cv2.cvtColor(screenshot, cv2.COLOR_BGRA2BGR)
-
-    restart_roi = select_roi(game_over_bgr.copy(), "Select the RESTART button")
-    if not restart_roi:
-        print("No restart button selected. Aborting.")
-        return
-
-    x, y, w, h = restart_roi
-    template_restart_img = game_over_bgr[y:y+h, x:x+w]
-    cv2.imwrite("template_restart.png", template_restart_img)
-    print("Saved 'template_restart.png'.")
-
-    print("\nAll templates have been recaptured successfully!")
-    print("You can now run 'python main.py'.")
+    print("\nAll templates have been processed successfully!")
 
 if __name__ == "__main__":
     main()
