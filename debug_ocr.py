@@ -9,56 +9,53 @@ import pyautogui
 
 def ocr_by_contour(img):
     """
-    Performs OCR by finding contours, sorting them left-to-right,
-    and running Tesseract on each individual digit.
+    Performs OCR by finding contours and testing multiple Tesseract configs on each digit.
     """
-    # --- Corrected Pipeline ---
-    # 1. Create a WHITE text on BLACK background image
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    # Use a fixed threshold, as Otsu can be unstable with single colors
-    _, thresh = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY_INV)
-    cv2.imwrite("debug_contour_thresh.png", thresh)
+    thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
 
-    # 2. Erode the WHITE text to break connections
-    kernel = np.ones((3,2), np.uint8) # Use a rectangular kernel, wider than it is tall
+    kernel = np.ones((2,2), np.uint8)
     eroded_img = cv2.erode(thresh, kernel, iterations=1)
-    cv2.imwrite("debug_contour_eroded.png", eroded_img)
 
-    # 3. Find contours on the eroded image
     contours, _ = cv2.findContours(eroded_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
-    print(f"Found {len(contours)} contours.") # Debug print
-    
     if not contours:
-        return ""
+        return "", "", ""
 
-    # Draw contours for debugging
-    img_with_boxes = img.copy()
-    bounding_boxes = [cv2.boundingRect(c) for c in contours]
+    min_w, min_h = 5, 10
+    bounding_boxes = [cv2.boundingRect(c) for c in contours if cv2.boundingRect(c)[2] > min_w and cv2.boundingRect(c)[3] > min_h]
     
-    # Sort bounding boxes by their x-coordinate
+    if not bounding_boxes:
+        return "", "", ""
+
     sorted_boxes = sorted(bounding_boxes, key=lambda b: b[0])
     
-    digits = ""
-    for (x, y, w, h) in sorted_boxes:
-        cv2.rectangle(img_with_boxes, (x, y), (x + w, y + h), (0, 255, 0), 1)
+    # --- Test different configs ---
+    digits_config1 = "" # OEM 3, PSM 10 (Current)
+    digits_config2 = "" # OEM 3, PSM 8
+    digits_config3 = "" # OEM 0, PSM 10 (Legacy)
+
+    for i, (x, y, w, h) in enumerate(sorted_boxes):
+        padding = 5
+        digit_roi = thresh[max(0, y-padding):y+h+padding, max(0, x-padding):x+w+padding]
+        digit_roi_inverted = cv2.bitwise_not(digit_roi)
+
+        # Config 1: Modern Engine, Single Char
+        config1 = r'--oem 3 --psm 10 -c tessedit_char_whitelist=0123456789'
+        digit_text1 = pytesseract.image_to_string(digit_roi_inverted, config=config1)
+        digits_config1 += digit_text1.strip()
+
+        # Config 2: Modern Engine, Single Word
+        config2 = r'--oem 3 --psm 8 -c tessedit_char_whitelist=0123456789'
+        digit_text2 = pytesseract.image_to_string(digit_roi_inverted, config=config2)
+        digits_config2 += digit_text2.strip()
+
+        # Config 3: Legacy Engine, Single Char
+        config3 = r'--oem 0 --psm 10 -c tessedit_char_whitelist=0123456789'
+        digit_text3 = pytesseract.image_to_string(digit_roi_inverted, config=config3)
+        digits_config3 += digit_text3.strip()
         
-        # Basic filtering to ignore noise
-        if w < 4 or h < 8:
-            continue
-            
-        # Crop from the original (non-eroded) thresholded image
-        padding = 3
-        digit_roi = thresh[y-padding:y+h+padding, x-padding:x+w+padding]
-        
-        # Use PSM 10: Treat the image as a single character
-        config = r'--oem 3 --psm 10 -c tessedit_char_whitelist=0123456789'
-        digit_text = pytesseract.image_to_string(digit_roi, config=config)
-        
-        digits += digit_text.strip()
-        
-    cv2.imwrite("debug_contour_boxes.png", img_with_boxes)
-    return digits
+    return digits_config1, digits_config2, digits_config3
 
 def main():
     print("=== OCR Debugging Tool (Continuous Mode) ===")
@@ -125,6 +122,7 @@ def main():
         
         # --- Continuous Debug Loop ---
         print("\nContinuously analyzing score. Press Ctrl+C to quit.")
+        print("Testing: (1) Modern/Char | (2) Modern/Word | (3) Legacy/Char")
         while True:
             try:
                 game_img = np.array(sct.grab(game_region))
@@ -134,9 +132,9 @@ def main():
                 score_img = game_img_bgr[roi['y']:roi['y']+roi['h'], roi['x']:roi['x']+roi['w']]
                 
                 # --- Contour Method ---
-                text_contour = ocr_by_contour(score_img)
+                text1, text2, text3 = ocr_by_contour(score_img)
 
-                print(f"Contour Method: '{text_contour.strip():<5}'")
+                print(f"1: '{text1.strip():<5}' | 2: '{text2.strip():<5}' | 3: '{text3.strip():<5}'")
 
                 time.sleep(0.5)
             except KeyboardInterrupt:

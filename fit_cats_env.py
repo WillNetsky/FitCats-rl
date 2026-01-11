@@ -6,24 +6,91 @@ import pyautogui
 import mss
 import time
 import os
-import pytesseract
 import json
 from collections import deque
+
+# --- Custom Template-Based OCR Functions ---
+
+def get_digit_templates(template_dir="digit_templates"):
+    """Loads all template exemplars from subdirectories."""
+    digit_templates = {}
+    if not os.path.exists(template_dir):
+        return digit_templates
+    for digit_folder in os.listdir(template_dir):
+        if not digit_folder.isdigit():
+            continue
+        digit_path = os.path.join(template_dir, digit_folder)
+        if os.path.isdir(digit_path):
+            templates = []
+            for template_file in os.listdir(digit_path):
+                template_img = cv2.imread(os.path.join(digit_path, template_file), cv2.IMREAD_GRAYSCALE)
+                if template_img is not None:
+                    templates.append(template_img)
+            if templates:
+                digit_templates[digit_folder] = templates
+    return digit_templates
+
+def find_contours(score_img):
+    gray = cv2.cvtColor(score_img, cv2.COLOR_BGR2GRAY)
+    thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+    kernel = np.ones((2,2), np.uint8)
+    eroded_img = cv2.erode(thresh, kernel, iterations=1)
+    contours, _ = cv2.findContours(eroded_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    if not contours:
+        return [], None
+
+    min_w, min_h = 5, 10
+    bounding_boxes = [cv2.boundingRect(c) for c in contours if cv2.boundingRect(c)[2] > min_w and cv2.boundingRect(c)[3] > min_h]
+    sorted_boxes = sorted(bounding_boxes, key=lambda b: b[0])
+    return sorted_boxes, thresh
+
+def recognize_score_with_templates(score_img, digit_templates):
+    sorted_boxes, thresh = find_contours(score_img)
+    if not sorted_boxes:
+        return ""
+
+    recognized_score = ""
+    for (x, y, w, h) in sorted_boxes:
+        padding = 5
+        digit_roi = thresh[max(0, y-padding):y+h+padding, max(0, x-padding):x+w+padding]
+        
+        best_overall_score = 0.5 # Confidence threshold
+        best_overall_digit = ""
+        for digit_str, templates in digit_templates.items():
+            best_score_for_this_digit = 0.0
+            for template_img in templates:
+                if digit_roi.shape[0] < template_img.shape[0] or digit_roi.shape[1] < template_img.shape[1]: continue
+                res = cv2.matchTemplate(digit_roi, template_img, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, _ = cv2.minMaxLoc(res)
+                if max_val > best_score_for_this_digit:
+                    best_score_for_this_digit = max_val
+            
+            if best_score_for_this_digit > best_overall_score:
+                best_overall_score = best_score_for_this_digit
+                best_overall_digit = digit_str
+        
+        if best_overall_digit:
+            recognized_score += best_overall_digit
+    
+    return recognized_score
+
+# --- Main Environment Class ---
 
 class FitCatsEnv(gym.Env):
     def __init__(self):
         super(FitCatsEnv, self).__init__()
-        
-        # Pyautogui and mss will now respect the DISPLAY variable
-        # set by the parent script (train_distributed.py or launch_instance.sh)
         pyautogui.FAILSAFE = True
 
-        # Load Calibration Data
+        # Load Calibration and Template Data
         if not os.path.exists("calibration_data.json"):
             raise FileNotFoundError("calibration_data.json not found! Run setup_agent.py first.")
-            
         with open("calibration_data.json", "r") as f:
             self.calib = json.load(f)
+
+        self.digit_templates = get_digit_templates()
+        if len(self.digit_templates) < 10:
+            print("Warning: Not all digit templates (0-9) have been created. OCR may be inaccurate.")
 
         self.action_space = spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
         self.observation_space = spaces.Dict({
@@ -39,13 +106,11 @@ class FitCatsEnv(gym.Env):
         
         if os.path.exists("template_newgrounds_play.png"):
             self.template_ng_play = cv2.imread("template_newgrounds_play.png", cv2.IMREAD_COLOR)
-        else:
-            self.template_ng_play = None
+        else: self.template_ng_play = None
             
         if os.path.exists("template_music.png"):
             self.template_music = cv2.imread("template_music.png", cv2.IMREAD_COLOR)
-        else:
-            self.template_music = None
+        else: self.template_music = None
 
         if any(t is None for t in [self.template_play, self.template_restart, self.template_empty_board, self.game_title_template]):
             raise FileNotFoundError("Required template images not found! Run setup_agent.py.")
@@ -58,7 +123,6 @@ class FitCatsEnv(gym.Env):
         self.step_count = 0
         self.last_click_time = time.time()
         self.consecutive_waits = 0
-        self.score_buffer = deque(maxlen=5)
         self.low_score_counter = 0
         self.music_muted = False
 
@@ -67,12 +131,10 @@ class FitCatsEnv(gym.Env):
         print(f"[{display}] Searching for game window...")
         
         def scan_for(template):
+            if template is None: return 0, (0,0)
             full_screenshot = np.array(self.sct.grab(self.sct.monitors[0]))
             full_screenshot = cv2.cvtColor(full_screenshot, cv2.COLOR_BGRA2BGR)
-            
-            if full_screenshot.shape[0] < template.shape[0] or full_screenshot.shape[1] < template.shape[1]:
-                return 0, (0, 0)
-                
+            if full_screenshot.shape[0] < template.shape[0] or full_screenshot.shape[1] < template.shape[1]: return 0, (0,0)
             res = cv2.matchTemplate(full_screenshot, template, cv2.TM_CCOEFF_NORMED)
             _, max_val, _, max_loc = cv2.minMaxLoc(res)
             return max_val, max_loc
@@ -80,20 +142,15 @@ class FitCatsEnv(gym.Env):
         start_time = time.time()
         while time.time() - start_time < 60:
             max_val, max_loc = scan_for(self.game_title_template)
-            if max_val > 0.8:
-                return self._calculate_region(max_loc)
+            if max_val > 0.8: return self._calculate_region(max_loc)
 
             if self.template_ng_play is not None:
                 max_val_ng, max_loc_ng = scan_for(self.template_ng_play)
-                
                 if max_val_ng > 0.8:
                     print(f"[{display}] Found Newgrounds button! Clicking it...")
-                    virtual_left = self.sct.monitors[0]['left']
-                    virtual_top = self.sct.monitors[0]['top']
-                    
+                    virtual_left, virtual_top = self.sct.monitors[0]['left'], self.sct.monitors[0]['top']
                     btn_x = virtual_left + max_loc_ng[0] + self.template_ng_play.shape[1] // 2
                     btn_y = virtual_top + max_loc_ng[1] + self.template_ng_play.shape[0] // 2
-                    
                     pyautogui.click(btn_x, btn_y)
                     print(f"[{display}] Waiting 8 seconds for game to load...")
                     time.sleep(8)
@@ -106,24 +163,14 @@ class FitCatsEnv(gym.Env):
 
     def _calculate_region(self, max_loc):
         display = os.environ.get('DISPLAY', ':0')
-        virtual_left = self.sct.monitors[0]['left']
-        virtual_top = self.sct.monitors[0]['top']
-        
-        screen_left = virtual_left + max_loc[0]
-        screen_top = virtual_top + max_loc[1]
-        
-        region = {
-            "top": screen_top, 
-            "left": screen_left, 
-            "width": self.calib["game_width"], 
-            "height": self.calib["game_height"]
-        }
+        virtual_left, virtual_top = self.sct.monitors[0]['left'], self.sct.monitors[0]['top']
+        screen_left, screen_top = virtual_left + max_loc[0], virtual_top + max_loc[1]
+        region = {"top": screen_top, "left": screen_left, "width": self.calib["game_width"], "height": self.calib["game_height"]}
         print(f"[{display}] Game window found at: {region}")
         return region
 
     def _find_template(self, img, template):
-        if template is None or img.shape[0] < template.shape[0] or img.shape[1] < template.shape[1]:
-            return 0, (0, 0)
+        if template is None or img.shape[0] < template.shape[0] or img.shape[1] < template.shape[1]: return 0, (0,0)
         res = cv2.matchTemplate(img, template, cv2.TM_CCOEFF_NORMED)
         _, max_val, _, max_loc = cv2.minMaxLoc(res)
         return max_val, max_loc
@@ -137,60 +184,38 @@ class FitCatsEnv(gym.Env):
         try:
             roi = self.calib["score_roi"]
             score_img = img[roi['y']:roi['y']+roi['h'], roi['x']:roi['x']+roi['w']]
-            
-            gray = cv2.cvtColor(score_img, cv2.COLOR_BGR2GRAY)
-            thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
-            custom_config = r'--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789'
-            score_text = pytesseract.image_to_string(thresh, config=custom_config)
-            return int(score_text.strip())
-        except:
+            score_text = recognize_score_with_templates(score_img, self.digit_templates)
+            return int(score_text) if score_text else -1
+        except (ValueError, TypeError):
             return -1
 
     def _get_observation(self):
         img = np.array(self.sct.grab(self.game_region))
         img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-
-        # Board View
         roi = self.calib["agent_view_roi"]
         board_img = img[roi['y']:roi['y']+roi['h'], roi['x']:roi['x']+roi['w']]
         board_obs = cv2.resize(board_img, (84, 84))
-
-        # Next Cat Size
         roi = self.calib["next_cat_roi"]
         next_cat_img = img[roi['y']:roi['y']+roi['h'], roi['x']:roi['x']+roi['w']]
         gray = cv2.cvtColor(next_cat_img, cv2.COLOR_BGR2GRAY)
         _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
         pixel_count = np.count_nonzero(thresh)
         normalized_size = pixel_count / (roi['w'] * roi['h'])
-        
         time_delta = time.time() - self.last_click_time
-
-        return {
-            "board": board_obs, 
-            "next_cat_size": np.array([normalized_size], dtype=np.float32),
-            "time_since_click": np.array([time_delta], dtype=np.float32)
-        }
+        return {"board": board_obs, "next_cat_size": np.array([normalized_size], dtype=np.float32), "time_since_click": np.array([time_delta], dtype=np.float32)}
 
     def step(self, action):
         self.step_count += 1
-        
         x_pos_norm, click_trigger = action
         did_click = click_trigger > 0
         action_str = "WAIT"
-
         if did_click:
             action_str = f"CLICK @ {x_pos_norm:.2f}"
             norm_action = (x_pos_norm + 1) / 2.0
-            
-            min_x = self.calib["click_x_min_rel"]
-            max_x = self.calib["click_x_max_rel"]
-            
+            min_x, max_x = self.calib["click_x_min_rel"], self.calib["click_x_max_rel"]
             click_x_rel = int(norm_action * (max_x - min_x) + min_x)
             click_x_abs = self.game_region['left'] + click_x_rel
-            
-            # Drop Y is 15% down from top
             drop_y_abs = self.game_region['top'] + int(self.game_region['height'] * 0.15)
-            
             pyautogui.click(click_x_abs, drop_y_abs)
             self.last_click_time = time.time()
             self.consecutive_waits = 0
@@ -202,14 +227,8 @@ class FitCatsEnv(gym.Env):
         full_img = np.array(self.sct.grab(self.game_region))
         full_img = cv2.cvtColor(full_img, cv2.COLOR_BGRA2BGR)
         obs = self._get_observation()
-
         cat_size = obs['next_cat_size'][0]
-        info = {
-            "score": self.last_score,
-            "next_cat_size": cat_size,
-            "did_click": 1.0 if did_click else 0.0,
-            "is_game_over": False
-        }
+        info = {"score": self.last_score, "next_cat_size": cat_size, "did_click": 1.0 if did_click else 0.0, "is_game_over": False}
 
         max_val_r, _ = self._find_template(full_img, self.template_restart)
         if max_val_r > 0.8:
@@ -219,17 +238,13 @@ class FitCatsEnv(gym.Env):
                 print(f"[{display}] *** NEW HIGH SCORE: {self.last_score} ***")
                 self.session_high_score = self.last_score
                 cv2.imwrite(f"highscore_{self.last_score}.png", full_img)
-            
-            self.last_score = 0
-            self.low_score_counter = 0
+            self.last_score, self.low_score_counter = 0, 0
             reward = -1000.0 if did_click else 0.0
             info["is_game_over"] = True
             return obs, reward, True, False, info
 
-        # --- Robust Score Logic ---
         current_score = self._read_score(full_img)
         reward = 0.0
-        
         if current_score != -1:
             if current_score > self.last_score:
                 self.low_score_counter = 0
@@ -243,10 +258,8 @@ class FitCatsEnv(gym.Env):
                     print(f"[{display}] Score correction: {self.last_score} -> {current_score}")
                     self.last_score = current_score
                     self.low_score_counter = 0
-            else:
-                self.low_score_counter = 0
-        else:
-            reward = -0.1
+            else: self.low_score_counter = 0
+        else: reward = -0.1
         
         if not did_click:
             wait_penalty = -0.01 * (1.1 ** self.consecutive_waits)
@@ -254,14 +267,11 @@ class FitCatsEnv(gym.Env):
         
         display = os.environ.get('DISPLAY', ':0')
         print(f"[{display}] Step: {self.step_count:<6} | Action: {action_str:<15} | Score: {self.last_score:<6} | Reward: {reward:>8.2f} | Next Cat Size: {cat_size:.2f}")
-
         return obs, reward, False, False, info
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.last_score = 0
-        self.low_score_counter = 0
-        self.step_count = 0
+        self.last_score, self.low_score_counter, self.step_count = 0, 0, 0
         self.last_click_time = time.time()
         self.consecutive_waits = 0
         display = os.environ.get('DISPLAY', ':0')
