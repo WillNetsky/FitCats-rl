@@ -8,14 +8,13 @@ import time
 import os
 import pytesseract
 
-# --- Hardcoded Calibration Data ---
-GAME_REGION = {'top': 446, 'left': 1035, 'width': 742, 'height': 481}
-CLICK_X_MIN = 1255
-CLICK_X_MAX = 1552
-SCORE_ROI = {'x': 27, 'y': 68, 'w': 109, 'h': 32}
-AGENT_VIEW_ROI = {'x': 205, 'y': 32, 'w': 327, 'h': 417}
-NEXT_CAT_ROI = {'x': 639, 'y': 67, 'w': 66, 'h': 57}
-DROP_Y = GAME_REGION['top'] + int(GAME_REGION['height'] * 0.15)
+# --- Relative Calibration Data ---
+CLICK_X_MIN_REL = 385
+CLICK_X_MAX_REL = 894
+SCORE_ROI = {'x': 49, 'y': 58, 'w': 189, 'h': 58}
+AGENT_VIEW_ROI = {'x': 357, 'y': 3, 'w': 564, 'h': 711}
+NEXT_CAT_ROI = {'x': 1101, 'y': 56, 'w': 118, 'h': 101}
+DROP_Y_REL_PERCENT = 0.15
 
 class FitCatsEnv(gym.Env):
     def __init__(self):
@@ -23,27 +22,51 @@ class FitCatsEnv(gym.Env):
         pyautogui.FAILSAFE = True
 
         self.action_space = spaces.Box(low=-1, high=1, shape=(1,), dtype=np.float32)
-        
         self.observation_space = spaces.Dict({
             "board": spaces.Box(low=0, high=255, shape=(84, 84, 3), dtype=np.uint8),
             "next_cat_color": spaces.Box(low=0, high=255, shape=(3,), dtype=np.uint8)
         })
 
-        self.template_play = cv2.imread("template_play.png")
-        self.template_restart = cv2.imread("template_restart.png")
-        if self.template_play is None or self.template_restart is None:
-            raise FileNotFoundError("Templates not found! Run analyze_game_ui.py first.")
+        self.game_title_template = cv2.imread("game_title.png", cv2.IMREAD_COLOR)
+        self.template_play = cv2.imread("template_play.png", cv2.IMREAD_COLOR)
+        self.template_restart = cv2.imread("template_restart.png", cv2.IMREAD_COLOR)
+        if any(t is None for t in [self.game_title_template, self.template_play, self.template_restart]):
+            raise FileNotFoundError("Required template images not found!")
 
         self.sct = mss.mss()
+        self.game_region = self._locate_game_window()
+        
         self.last_score = 0
         self.step_count = 0
+
+    def _locate_game_window(self):
+        print("Searching for game window on all screens...")
+        # Get all monitors, skipping the first one which is the 'all-in-one' virtual screen
+        monitors = self.sct.monitors[1:]
+        
+        for i, monitor in enumerate(monitors):
+            print(f"Searching on monitor {i+1}...")
+            try:
+                # Define the region for pyautogui to search
+                search_region = (monitor['left'], monitor['top'], monitor['width'], monitor['height'])
+                region = pyautogui.locateOnScreen("game_title.png", confidence=0.8, region=search_region)
+                
+                if region:
+                    print(f"Game window found on monitor {i+1} at: {region}")
+                    return {"top": region.top, "left": region.left, "width": region.width, "height": region.height}
+            except pyautogui.PyAutoGUIException:
+                # This can happen if the image is not found on the monitor
+                print(f"Not found on monitor {i+1}.")
+                continue
+                
+        raise Exception("Could not find the game window on ANY screen. Make sure it's visible and not obstructed.")
 
     def _find_template_and_click(self, img, template):
         res = cv2.matchTemplate(img, template, cv2.TM_CCOEFF_NORMED)
         _, max_val, _, max_loc = cv2.minMaxLoc(res)
         if max_val > 0.8:
-            cx = GAME_REGION['left'] + max_loc[0] + template.shape[1] // 2
-            cy = GAME_REGION['top'] + max_loc[1] + template.shape[0] // 2
+            cx = self.game_region['left'] + max_loc[0] + template.shape[1] // 2
+            cy = self.game_region['top'] + max_loc[1] + template.shape[0] // 2
             pyautogui.click(cx, cy)
             return True
         return False
@@ -52,10 +75,8 @@ class FitCatsEnv(gym.Env):
         try:
             sx, sy, sw, sh = SCORE_ROI['x'], SCORE_ROI['y'], SCORE_ROI['w'], SCORE_ROI['h']
             score_img = img[sy:sy+sh, sx:sx+sw]
-            
             gray = cv2.cvtColor(score_img, cv2.COLOR_BGR2GRAY)
             thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
-            
             custom_config = r'--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789'
             score_text = pytesseract.image_to_string(thresh, config=custom_config)
             return int(score_text.strip())
@@ -63,7 +84,7 @@ class FitCatsEnv(gym.Env):
             return -1
 
     def _get_observation(self):
-        img = np.array(self.sct.grab(GAME_REGION))
+        img = np.array(self.sct.grab(self.game_region))
         img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
 
         ax, ay, aw, ah = AGENT_VIEW_ROI['x'], AGENT_VIEW_ROI['y'], AGENT_VIEW_ROI['w'], AGENT_VIEW_ROI['h']
@@ -80,11 +101,14 @@ class FitCatsEnv(gym.Env):
         self.step_count += 1
         
         norm_action = (action[0] + 1) / 2.0
-        click_x = int(norm_action * (CLICK_X_MAX - CLICK_X_MIN) + CLICK_X_MIN)
-        pyautogui.click(click_x, DROP_Y)
+        click_x_rel = int(norm_action * (CLICK_X_MAX_REL - CLICK_X_MIN_REL) + CLICK_X_MIN_REL)
+        click_x_abs = self.game_region['left'] + click_x_rel
+        drop_y_abs = self.game_region['top'] + int(self.game_region['height'] * DROP_Y_REL_PERCENT)
+        
+        pyautogui.click(click_x_abs, drop_y_abs)
         time.sleep(0.5)
 
-        full_img = np.array(self.sct.grab(GAME_REGION))
+        full_img = np.array(self.sct.grab(self.game_region))
         full_img = cv2.cvtColor(full_img, cv2.COLOR_BGRA2BGR)
         obs = self._get_observation()
 
@@ -101,7 +125,6 @@ class FitCatsEnv(gym.Env):
         elif current_score == -1:
             reward = -0.1
         
-        # Updated log message
         cat_color = obs['next_cat_color']
         print(f"Step: {self.step_count} | Action: {action[0]:.2f} | Score: {self.last_score} | Reward: {reward:.2f} | Next Cat: {cat_color}")
 
@@ -111,10 +134,10 @@ class FitCatsEnv(gym.Env):
         super().reset(seed=seed)
         self.last_score = 0
         self.step_count = 0
-        print("\n--- Resetting Environment ---")
+        print("Resetting environment...")
         
         while True:
-            img = np.array(self.sct.grab(GAME_REGION))
+            img = np.array(self.sct.grab(self.game_region))
             img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
             
             if self._find_template_and_click(img, self.template_restart):

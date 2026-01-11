@@ -23,20 +23,25 @@ def main():
         name_prefix="fit_cats_ppo"
     )
 
-    # --- Model ---
-    # We set n_steps to a small value to force frequent logging.
-    # The default is 2048, which can take a while to complete.
-    model = PPO(
-        "MultiInputPolicy", 
-        env, 
-        verbose=1, 
-        tensorboard_log=log_dir,
-        n_steps=256  # Log data much more frequently
-    )
+    # --- Model Loading/Creation ---
+    # Path to the model you want to resume from
+    model_path = os.path.join(model_dir, "fit_cats_ppo_final.zip")
+
+    if os.path.exists(model_path):
+        print(f"--- Resuming training from {model_path} ---")
+        model = PPO.load(model_path, env=env, tensorboard_log=log_dir)
+    else:
+        print("--- Starting new training ---")
+        model = PPO(
+            "MultiInputPolicy", 
+            env, 
+            verbose=1, 
+            tensorboard_log=log_dir,
+            n_steps=256
+        )
 
     # --- Training ---
-    print("\n--- Starting Training ---")
-    print("Make sure the game window is visible and unobstructed.")
+    print("\nMake sure the game window is visible and unobstructed.")
     print(f"TensorBoard logs will be saved in: {log_dir}")
     print(f"Model checkpoints will be saved in: {model_dir}{run_id}/")
     print(f"\nTo view progress, run: tensorboard --logdir {log_dir}\n")
@@ -45,16 +50,16 @@ def main():
         model.learn(
             total_timesteps=50000, 
             callback=checkpoint_callback,
-            tb_log_name=f"PPO_{run_id}"
+            tb_log_name=f"PPO_{run_id}",
+            reset_num_timesteps=False  # Set to False to continue step count from loaded model
         )
     except KeyboardInterrupt:
         print("Training interrupted")
     finally:
         # Save final model
-        final_model_path = os.path.join(model_dir, "fit_cats_ppo_final.zip")
-        model.save(final_model_path)
+        model.save(model_path) # Overwrite the final model
         env.close()
-        print(f"\nTraining complete. Final model saved to {final_model_path}")
+        print(f"\nTraining complete. Final model saved to {model_path}")
 
 if __name__ == '__main__':
     main()
