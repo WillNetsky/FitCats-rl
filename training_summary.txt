@@ -1,0 +1,11 @@
+--- Fit Cats Training Summary ---
+Total Episodes Completed: 14
+Best Score: 528
+Average Score: 78.86
+Worst Score: 4
+------------------------------
+Avg Score (First Half): 35.71
+Avg Score (Second Half): 122.00
+Improvement: +86.29
+------------------------------
+Last 20 Scores: [55, 4, 58, 6, 30, 92, 5, 26, 96, 50, 58, 6, 528, 90]

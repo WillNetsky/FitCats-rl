@@ -1,0 +1,113 @@
+Fit Cats
+
+Saw fit cats on the go off kings and wanted to do a rl model to learn how to play it
+
+got a basic rl project started
+
+working on controlling the game
+	selenium is able to click the button to load the game
+	selenium is able to click the play buton, because the music loads, but the game doesnt start
+
+	decided to switch to pyautogui, the clicks were too inconsistent
+	clicks are good, but the image templates and scaling make it difficult to set up
+	also controls my inputs so essentially locks the screen
+
+	xephyr
+	tools to make the templates and layouts
+
+
+OCR TEST
+
+0 - all correct
+10 - all correct
+20 - current reads it as 40, other two correct
+28 - all read it correctly
+34 - current reads it as 3, other two correct
+56 - all correct
+60 - all correct
+70 - all correct
+88 - all correct
+118 - all correct
+142 - current is correct, but the other two read it as 2!
+148 - all correct
+158 - all correct
+166 - all correct
+176 - all correct
+198 - all correct
+
+OCR TEST 2
+
+Failures only
+22 Fails on B,C,D (all say 2)
+32 Fails on A (3)
+72 Fails on B,C,D (all blank)
+440 Fails on B,C,D (40)
+
+OCR TEST 3 
+Contours
+
+Real Score - Num Contours Found - Contour Method 
+0 - 1 - "    "
+6 - 1 - 6
+12 - 2 - 12
+30- 2 - 3 (Cant Read 0)
+38 - 2 - 3
+48 - 2 - 8 (Cant Read 4)
+84 - 2 - 8
+120 - 3 - 2
+126 - 3 - 126
+130 - 3 - 13
+136 - 3 - 136
+154 - 3 - 5
+164 - 3 - 6
+178 - 3 - 78
+230 - 3 - 43
+
+OCR TEST 4
+0 - all correct
+26 - 1 and 2 correct, 3 says 36
+34 - 1 and 3 say "3", 2 says "314"
+48 - 1 and 3 correct, 2 says "148"
+70 - 1 and 2 correct, 3 says "10"
+106- all correct
+116- all correct
+126- 1 and 2 correct, 3 says "136"
+170- 1 and 2 correct, 3 says "110"
+180 - all correct
+188 - all correct
+198 - all correct
+208 - 1 and 2 correct, 3 says "08"
+216 - 1 and 3 correct, 2 says "416"
+at some point it did this, it was in between multiple consecutive scores so i couldnt see what the real score was
+	1: '244  ' | 2: '21113' | 3: '4    '
+256 - 1 and 2 correct, 3 says "356"
+
+
+
+clicking randomly behaviors
+	double clicking the sides when the next one is the same as what its holding for a quick reward
+
+implemented wait to perceive motion
+
+4-frame stack too 
+inferred current cat from next_cat
+
+
+
+need to add ability to check for newgrounds login, a rare case (maybe just refresh the page over and over until it shows up? then screenshot?)
+
+How fast it can click a cat could determine the timestep
+in prompting for this it started trying to count the number of cats, this is an interesting feature to add to the observation set
+
+
+Prompts Saved:
+
+The circle matching is working much better. However there are some issues:
+
+Eyes sometimes show up as separate cats, circles within other circles should not count.
+Ears sometimes count, we could probably be stricter about the shape of the circles.
+
+The game occasionally finds different number of cats in a static state. Let's start with the previous issues before we tackle this one.
+
+
+We shuold extend the area searching for circles to 
