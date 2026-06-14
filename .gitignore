@@ -1,0 +1,34 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+
+# --- JetBrains IDE (per-user state) ---
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/usage.statistics.xml
+.idea/shelf/
+
+# --- Trained models / RL checkpoints ---
+models/
+
+# --- High score logs (generated at runtime) ---
+highscores/
+highscores*.json
+
+# --- CV templates & captured/debug images ---
+cat_templates/
+digit_templates/
+*.png
+
+# --- Runtime config / calibration produced by tooling ---
+config.json
+calibration_data.json
+
+# --- Saved game-page captures ---
+*.html
+*_files/
+game_frame_source.html
+
+# NOTE: Does not ignore *.py / *.sh so your scripts stay tracked. If you keep
+# any source .png (e.g. a checked-in reference asset), un-ignore it with:
+#   !path/to/keep.png

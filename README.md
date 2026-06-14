@@ -1,78 +1,86 @@
-# FitCats RL Agent
+# FitCats-RL: A Reinforcement Learning Agent for "Fit Cats"
 
-This project uses deep reinforcement learning to train an AI agent to play the "Fit Cats" puzzle game. The agent learns to stack cats of the same size to merge them, aiming to achieve the highest possible score before the container overflows.
+This project trains a reinforcement learning agent to play the Flash game "Fit Cats" using `stable-baselines3`. It uses a multi-headed input (image, cat count, etc.) and a sophisticated reward shaping strategy to learn the game.
 
-It uses `stable-baselines3` for the PPO algorithm and computer vision techniques (`OpenCV`, `mss`, `pyautogui`) to see the screen and interact with the game.
+## Project Structure
 
-## Features
+- `train_distributed.py`: The main script for training the agent. Launches multiple sandboxed environments.
+- `fit_cats_env.py`: The custom OpenAI Gym environment for the game.
+- `saliency_tool.py`: A research-grade tool to visualize the agent's "thought process" with saliency maps.
+- `calibration_data.json`: Stores the screen coordinates for game elements.
+- `highscores.json`: Tracks global and model-specific high scores.
+- `models/`: Stores the trained agent models (`.zip`).
+- `logs/`: Stores TensorBoard logs for each model.
+- `highscores/`: Stores screenshots of high-score moments.
+- `*.sh`: Utility scripts for setup, calibration, and debugging.
 
-- **Sandboxed Environment**: Uses **Xephyr** to create isolated virtual displays, allowing you to use your computer while the agents train in the background.
-- **Distributed Training**: Capable of running multiple game instances in parallel to train a single, shared model, significantly speeding up data collection and learning.
-- **Custom Template-Based OCR**: A highly accurate, custom-built OCR system for reading the game score, replacing the less reliable general-purpose Tesseract.
-- **Automated Setup & Calibration**: Scripts to automate the process of finding game coordinates and creating visual templates.
+## Setup and Installation
 
-## Setup
+This project is designed for a Linux environment with X11.
 
-1.  **Install Python Dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
+### 1. System Setup
 
-2.  **Install System Dependencies**:
-    ```bash
-    sudo apt-get update
-    sudo apt-get install xserver-xephyr fluxbox tesseract-ocr tesseract-ocr-all
-    ```
+First, run the system setup script to install all necessary system packages (like `Xephyr`, `fluxbox`, `chromium`) and Python dependencies.
 
-## How to Use
+```bash
+chmod +x setup_system.sh
+./setup_system.sh
+```
 
-The project is designed with a clear, step-by-step workflow.
+### 2. Calibration
 
-### Step 1: Calibration (One-Time Setup)
-
-First, you need to run the calibration script. This will launch a sandbox window and guide you through capturing the necessary screen coordinates and base templates for the game. **You only need to do this once.**
+Before training, you must calibrate the agent to find the game on your screen. Run the calibration tool and follow the on-screen prompts in the terminal.
 
 ```bash
 chmod +x calibrate_sandbox.sh
 ./calibrate_sandbox.sh
 ```
-Follow the interactive prompts in the terminal.
+This will generate the `calibration_data.json` file.
 
-### Step 2: Create Digit Templates
+## Usage
 
-Next, build the custom OCR library. This script will launch a sandbox and ask you to identify digits as you play the game, creating a robust recognition library.
+### Training a New Model
 
-```bash
-chmod +x create_digit_templates.sh
-./create_digit_templates.sh
-```
-Follow the prompts. The more examples you provide for each digit, the more accurate the score reading will be.
-
-### Step 3: Train the Agent
-
-Once calibration and digit templates are complete, you can start training the agent.
-
-To run the distributed training with **4 parallel agents**, use the following command:
+To train a new model from scratch, provide a unique `--model-name`.
 
 ```bash
-python train_distributed.py --num-agents 4
+python train_distributed.py --num-agents 4 --model-name my_first_model
 ```
+This will create:
+- `models/my_first_model.zip`
+- `logs/my_first_model/` (for TensorBoard)
+- `highscores_my_first_model.json`
 
-This will launch 4 sandbox windows and begin training a single shared model. You can adjust `--num-agents` based on your CPU/RAM capacity.
+### Resuming Training
 
-### Step 4: Monitor Training
-
-You can monitor the agent's learning progress using TensorBoard.
+To resume training for an existing model, simply run the command with the same model name.
 
 ```bash
-tensorboard --logdir logs/distributed
+python train_distributed.py --num-agents 4 --model-name my_first_model
 ```
-Navigate to `http://localhost:6006/` in your browser to view graphs of the agent's reward, score, and other metrics.
 
-## Scripts Overview
+### Monitoring
 
-- `train_distributed.py`: The main script for launching and managing distributed training.
-- `fit_cats_env.py`: The custom OpenAI Gym/Gymnasium environment that defines the game logic, observations, and rewards.
-- `setup_agent.py`: A comprehensive, interactive tool to calibrate all game coordinates.
-- `create_digit_templates.py`: An interactive tool to build the custom OCR template library.
-- `*.sh` scripts: Convenience wrappers for launching the Python scripts in the correct sandboxed environment.
+Use TensorBoard to monitor training progress.
+
+```bash
+tensorboard --logdir logs
+```
+Navigate to `http://localhost:6006/` in your browser. You will find:
+- **Scalars:** Reward, loss, click ratio, etc.
+- **Images:** Screenshots from the agent's perspective with overlaid stats.
+- **Histograms:** Distribution of weights and biases for each layer.
+- **Graphs:** The computation graph of the policy network.
+
+### Visualizing the Agent's Brain (Saliency Maps)
+
+Use the saliency tool to see what the agent is "looking at" in real-time.
+
+```bash
+chmod +x saliency_tool.sh
+./saliency_tool.sh --model-name my_first_model
+```
+This will open a window showing:
+- **Saliency Heatmap:** Red/yellow areas show what pixels are most influential.
+- **Policy Heatmap Bar:** A Red/Yellow/Green bar showing the probability of clicking at different horizontal positions.
+- **Click Indicator:** A vertical bar showing the agent's confidence in clicking vs. waiting.

@@ -1,169 +1,124 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-import time
-import random
+import cv2
+import numpy as np
+import mss
 import os
-import shutil
+import json
+import time
+import pyautogui
+
+def find_game_window(sct, game_title_template, ng_template):
+    """Finds the game window, handling the Newgrounds overlay."""
+    print("Searching for game window...")
+    start_time = time.time()
+    while time.time() - start_time < 60:
+        full_screenshot = np.array(sct.grab(sct.monitors[0]))
+        full_screenshot_bgr = cv2.cvtColor(full_screenshot, cv2.COLOR_BGRA2BGR)
+
+        res = cv2.matchTemplate(full_screenshot_bgr, game_title_template, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(res)
+        if max_val > 0.8:
+            return max_loc
+
+        if ng_template is not None:
+            res_ng = cv2.matchTemplate(full_screenshot_bgr, ng_template, cv2.TM_CCOEFF_NORMED)
+            _, max_val_ng, _, max_loc_ng = cv2.minMaxLoc(res_ng)
+            if max_val_ng > 0.8:
+                print("Found Newgrounds button, clicking it...")
+                btn_x = sct.monitors[0]['left'] + max_loc_ng[0] + ng_template.shape[1] // 2
+                btn_y = sct.monitors[0]['top'] + max_loc_ng[1] + ng_template.shape[0] // 2
+                pyautogui.click(btn_x, btn_y)
+                time.sleep(8)
+                continue
+        
+        print("Waiting for game window...")
+        time.sleep(2)
+    
+    raise Exception("Could not find game window after 60 seconds.")
 
 def main():
-    print("Initializing Chrome Options...")
-    options = webdriver.ChromeOptions()
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('--disable-gpu')
-    options.add_argument('--remote-debugging-port=9222')
-    options.add_argument('--disable-extensions')
-    options.add_argument('--disable-infobars')
-    options.add_argument('--start-maximized')
-    options.binary_location = "/snap/bin/chromium"
-
-    print("Attempting to find compatible ChromeDriver...")
-    driver = None
-    system_driver_paths = ["/snap/bin/chromium.chromedriver", "/usr/bin/chromedriver", "/usr/local/bin/chromedriver"]
+    print("=== Interactive Game Control Speed Test ===")
     
-    for path in system_driver_paths:
-        if os.path.exists(path) or shutil.which(path):
-            print(f"Found system ChromeDriver at: {path}")
-            try:
-                service = Service(executable_path=path)
-                driver = webdriver.Chrome(service=service, options=options)
-                print("Successfully started with system ChromeDriver.")
-                break
-            except Exception as e:
-                print(f"Failed to start with {path}: {e}")
-
-    if not driver:
-        print("Could not start WebDriver.")
+    if not os.path.exists("calibration_data.json"):
+        print("Error: calibration_data.json not found. Run setup_agent.py first.")
         return
-
-    url = "https://sites.google.com/site/populardoodlegames/fit-cats"
-    print(f"Navigating to {url}...")
-    driver.get(url)
+    with open("calibration_data.json", "r") as f:
+        calib = json.load(f)
     
-    time.sleep(5)
+    game_title_template = cv2.imread("game_title.png")
+    play_template = cv2.imread("template_play.png")
+    restart_template = cv2.imread("template_restart.png")
+    ng_template = cv2.imread("template_newgrounds_play.png") if os.path.exists("template_newgrounds_play.png") else None
 
-    # 1. Find and Click Play Button
-    print("\n--- Searching for Play Button ---")
-    frame_path = []
-    
-    def find_and_click_play(current_path, depth=0):
-        try:
-            buttons = driver.find_elements(By.TAG_NAME, "button")
-            for btn in buttons:
-                if "Play Fit Cats" in btn.text:
-                    print(f"Found 'Play Fit Cats' button at depth {depth}. Clicking...")
-                    btn.click()
-                    return True
-        except:
-            pass
+    with mss.mss() as sct:
+        title_loc = find_game_window(sct, game_title_template, ng_template)
+        game_region = {"top": title_loc[1], "left": title_loc[0], "width": calib["game_width"], "height": calib["game_height"]}
+        print(f"Game window found at: {game_region}")
 
-        iframes = driver.find_elements(By.TAG_NAME, "iframe")
-        for i, iframe in enumerate(iframes):
-            try:
-                driver.switch_to.frame(iframe)
-                current_path.append(i)
-                if find_and_click_play(current_path, depth + 1):
-                    return True
-                current_path.pop()
-                driver.switch_to.parent_frame()
-            except:
-                driver.switch_to.parent_frame()
-        return False
+        # --- Binary Search for Optimal Delay ---
+        low_delay = 0.05
+        high_delay = 0.5
+        best_working_delay = high_delay
+        iterations = 5
 
-    if find_and_click_play(frame_path):
-        print(f"Play button clicked in frame path: {frame_path}")
-        print("Waiting 15s for game to load...")
-        time.sleep(15)
+        print("\nStarting binary search for optimal click delay...")
+        print(f"Range: [{low_delay}s, {high_delay}s]")
 
-        print("Navigating back to game frame...")
-        driver.switch_to.default_content()
-        for i in frame_path:
-            iframes = driver.find_elements(By.TAG_NAME, "iframe")
-            driver.switch_to.frame(iframes[i])
-
-        print("Searching for canvas (including Shadow DOM)...")
-        
-        def expand_shadow_element(element):
-            shadow_root = driver.execute_script('return arguments[0].shadowRoot', element)
-            return shadow_root
-
-        def find_canvas_advanced(depth=0):
-            # 1. Standard search
-            canvases = driver.find_elements(By.TAG_NAME, "canvas")
-            for c in canvases:
-                w = c.size['width']
-                h = c.size['height']
-                print(f"Found canvas {w}x{h} at depth {depth}")
-                if w > 100: return c
-
-            # 2. Shadow DOM search
-            # Get all elements and check for shadow root
-            # This is expensive, so we limit it to likely containers
-            all_elements = driver.find_elements(By.CSS_SELECTOR, "div, section, app-root, game-container")
-            for el in all_elements:
-                try:
-                    shadow = expand_shadow_element(el)
-                    if shadow:
-                        print(f"Found Shadow Root at depth {depth}")
-                        # Search inside shadow
-                        # Note: Selenium 4 can search in shadow root directly
-                        try:
-                            shadow_canvases = shadow.find_elements(By.TAG_NAME, "canvas")
-                            for c in shadow_canvases:
-                                w = c.size['width']
-                                h = c.size['height']
-                                print(f"Found Shadow Canvas {w}x{h}")
-                                if w > 100: return c
-                        except:
-                            pass
-                except:
-                    pass
-
-            # 3. Recurse into iframes
-            iframes = driver.find_elements(By.TAG_NAME, "iframe")
-            for iframe in iframes:
-                driver.switch_to.frame(iframe)
-                c = find_canvas_advanced(depth + 1)
-                if c: return c
-                driver.switch_to.parent_frame()
-            return None
-
-        game_canvas = find_canvas_advanced()
-        
-        if game_canvas:
-            print("Canvas found!")
-            w = game_canvas.size['width']
-            h = game_canvas.size['height']
-            print(f"Canvas size: {w}x{h}")
-
-            actions = ActionChains(driver)
-            print("Clicking center to start game...")
-            actions.move_to_element_with_offset(game_canvas, w/2, h/2).click().perform()
-            time.sleep(2)
+        for i in range(iterations):
+            print("\n" + "-"*30)
+            print(f"Iteration {i+1}/{iterations}")
             
-            for _ in range(5):
-                x = random.randint(0, w)
-                y = random.randint(0, h)
-                print(f"Clicking at {x}, {y}")
-                actions.move_to_element_with_offset(game_canvas, x, y).click().perform()
-                time.sleep(0.5)
-        else:
-            print("Canvas NOT found.")
-            driver.save_screenshot("debug_screenshot.png")
-            with open("debug_frame.html", "w") as f:
-                f.write(driver.page_source)
+            game_img = np.array(sct.grab(game_region))
+            game_img_bgr = cv2.cvtColor(game_img, cv2.COLOR_BGRA2BGR)
+            
+            res_play = cv2.matchTemplate(game_img_bgr, play_template, cv2.TM_CCOEFF_NORMED)
+            _, max_val_play, _, max_loc_play = cv2.minMaxLoc(res_play)
 
-    else:
-        print("Warning: Play button not found.")
+            res_restart = cv2.matchTemplate(game_img_bgr, restart_template, cv2.TM_CCOEFF_NORMED)
+            _, max_val_restart, _, max_loc_restart = cv2.minMaxLoc(res_restart)
+            
+            if max_val_play > 0.8:
+                pyautogui.click(game_region['left'] + max_loc_play[0] + play_template.shape[1] // 2, game_region['top'] + max_loc_play[1] + play_template.shape[0] // 2)
+            elif max_val_restart > 0.8:
+                 pyautogui.click(game_region['left'] + max_loc_restart[0] + restart_template.shape[1] // 2, game_region['top'] + max_loc_restart[1] + restart_template.shape[0] // 2)
+            
+            print("Starting new game...")
+            time.sleep(3)
 
-    print("Test complete. Press Enter to close...")
-    input()
-    driver.quit()
+            test_delay = (low_delay + high_delay) / 2.0
+            num_clicks = 10
+            print(f"Testing delay: {test_delay:.4f}s")
+
+            min_x, max_x = calib["click_x_min_rel"], calib["click_x_max_rel"]
+            center_x_rel = (min_x + max_x) // 2
+            click_x_abs = game_region['left'] + center_x_rel
+            drop_y_abs = game_region['top'] + int(game_region['height'] * 0.15)
+
+            for _ in range(num_clicks):
+                pyautogui.click(click_x_abs, drop_y_abs)
+                time.sleep(test_delay)
+            
+            time.sleep(2)
+
+            # --- Get User Confirmation ---
+            try:
+                answer = input("Visually inspect the game. How many cats were dropped? ")
+                num_cats_found = int(answer)
+            except (ValueError, TypeError):
+                print("Invalid input. Assuming failure.")
+                num_cats_found = 0
+
+            if num_cats_found >= num_clicks:
+                print("SUCCESS: Delay is reliable. Trying faster...")
+                best_working_delay = test_delay
+                high_delay = test_delay
+            else:
+                print("FAILURE: Delay is too fast. Trying slower...")
+                low_delay = test_delay
+        
+        print("\n" + "="*30)
+        print("Binary search complete!")
+        print(f"Fastest reliable delay found: {best_working_delay:.4f}s")
+        print(f"Recommended value (with safety margin): {best_working_delay * 1.2:.4f}s")
 
 if __name__ == "__main__":
     main()

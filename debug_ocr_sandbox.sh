@@ -4,16 +4,17 @@ DISP_ID=":99"
 
 echo "--- Launching OCR Debug Sandbox on $DISP_ID ---"
 
-# Start Xephyr with the standard resolution
-Xephyr $DISP_ID -ac -screen 1355x1200 -title "OCR Debug Sandbox" &
+# Start Xephyr and redirect its output to /dev/null
+Xephyr $DISP_ID -ac -screen 1355x1200 -title "OCR Debug Sandbox" > /dev/null 2>&1 &
 XEPHYR_PID=$!
 sleep 2
 
-# Start Fluxbox
-DISPLAY=$DISP_ID fluxbox &
-sleep 1
+if command -v fluxbox &> /dev/null
+then
+    DISPLAY=$DISP_ID fluxbox &
+    sleep 1
+fi
 
-# Start Browser
 USER_DATA_DIR="$HOME/chrome-rl-ocr-debug"
 mkdir -p "$USER_DATA_DIR"
 

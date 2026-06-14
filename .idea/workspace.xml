@@ -1,13 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="f4485631-cb1d-4d0d-8488-c397a6bcecbc" name="Changes" comment="distributed version with xephyr">
-      <change afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/create_digit_templates.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/create_digit_templates.sh" afterDir="false" />
+    <list default="true" id="f4485631-cb1d-4d0d-8488-c397a6bcecbc" name="Changes" comment="switched from tesseract ocr to manual digit recognition with a tool">
+      <change afterPath="$PROJECT_DIR$/analyze_templates.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/calibrate_colors.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/calibrate_colors.sh" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/debug_single_image.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/play_model.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/play_model.sh" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/saliency_tool.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/saliency_tool.sh" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/scan_screenshots.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/setup_system.sh" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test_controls.sh" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/utils.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/debug_ocr.py" beforeDir="false" afterPath="$PROJECT_DIR$/debug_ocr.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/calibrate_sandbox.sh" beforeDir="false" afterPath="$PROJECT_DIR$/calibrate_sandbox.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/create_digit_templates.sh" beforeDir="false" afterPath="$PROJECT_DIR$/create_digit_templates.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/debug_cat_size.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/debug_ocr_sandbox.sh" beforeDir="false" afterPath="$PROJECT_DIR$/debug_ocr_sandbox.sh" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/fit_cats_env.py" beforeDir="false" afterPath="$PROJECT_DIR$/fit_cats_env.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/setup_agent.py" beforeDir="false" afterPath="$PROJECT_DIR$/setup_agent.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_controls.py" beforeDir="false" afterPath="$PROJECT_DIR$/test_controls.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/train_distributed.py" beforeDir="false" afterPath="$PROJECT_DIR$/train_distributed.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -37,23 +54,24 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "Python.analyze_game_ui.executor": "Run",
-    "Python.debug_agent_view.executor": "Run",
-    "Python.debug_cat_size.executor": "Run",
-    "Python.debug_start_screen.executor": "Run",
-    "Python.find_coordinates.executor": "Run",
-    "Python.main.executor": "Run",
-    "Python.recapture_template.executor": "Run",
-    "Python.test_controls.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "master"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;Python.analyze_game_ui.executor&quot;: &quot;Run&quot;,
+    &quot;Python.debug_agent_view.executor&quot;: &quot;Run&quot;,
+    &quot;Python.debug_cat_size.executor&quot;: &quot;Run&quot;,
+    &quot;Python.debug_start_screen.executor&quot;: &quot;Run&quot;,
+    &quot;Python.find_coordinates.executor&quot;: &quot;Run&quot;,
+    &quot;Python.main.executor&quot;: &quot;Run&quot;,
+    &quot;Python.recapture_template.executor&quot;: &quot;Run&quot;,
+    &quot;Python.test_controls.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/netsky/Code/nhl94-rl&quot;
   }
-}]]></component>
+}</component>
   <component name="RunManager" selected="Python.debug_cat_size">
     <configuration name="analyze_game_ui" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="FitCats-rl" />
@@ -227,7 +245,15 @@
       <option name="project" value="LOCAL" />
       <updated>1768163903836</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="switched from tesseract ocr to manual digit recognition with a tool">
+      <option name="closed" value="true" />
+      <created>1768169700154</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1768169700154</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -235,6 +261,7 @@
     <MESSAGE value="added tool to capture templates" />
     <MESSAGE value="updated to handle different windows (original site was down)" />
     <MESSAGE value="distributed version with xephyr" />
-    <option name="LAST_COMMIT_MESSAGE" value="distributed version with xephyr" />
+    <MESSAGE value="switched from tesseract ocr to manual digit recognition with a tool" />
+    <option name="LAST_COMMIT_MESSAGE" value="switched from tesseract ocr to manual digit recognition with a tool" />
   </component>
 </project>
